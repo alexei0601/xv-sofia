@@ -1,0 +1,203 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>XV de Sofía — Subir foto/video</title>
+  <link href="styles.css" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;700&family=Montserrat:wght@300;600&display=swap" rel="stylesheet">
+</head>
+<body>
+  <main class="card" role="main" aria-labelledby="titulo">
+    <section>
+      <div class="hero">
+        <div class="crown" aria-hidden="true">
+          <svg width="36" height="36" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+            <path d="M2 17l3-8 4 6 4-8 4 6 3-4v8H2z" fill="url(#g)"/>
+            <defs>
+              <linearGradient id="g" x1="0" x2="1">
+                <stop offset="0" stop-color="#FCEBB6"/><stop offset="1" stop-color="#D4AF37"/>
+              </linearGradient>
+            </defs>
+          </svg>
+        </div>
+
+        <div>
+          <div class="title" id="titulo">XV de Sofía</div>
+          <div class="subtitle">Sube tu foto o video para el recuerdo</div>
+        </div>
+      </div>
+
+      <h1>Captura un momento para Sofía</h1>
+      <p class="lead">Escanea el QR, permite la cámara, toma una foto o graba un video y súbelo. Se guardará en la carpeta compartida.</p>
+      <div class="info"><span class="accent">Consejo:</span> los videos grandes pueden tardar o fallar (lee nota abajo).</div>
+    </section>
+
+    <aside class="camera-panel" aria-label="Panel de cámara">
+      <div class="preview" id="preview">
+        <div class="placeholder-text">
+          <div class="placeholder-text__title">Vista previa</div>
+          <div class="placeholder-text__desc">Aún no hay archivo</div>
+        </div>
+      </div>
+
+      <div class="controls">
+        <!-- input acepta foto y video. capture intenta abrir cámara; para video algunos navegadores ofrecen grabadora -->
+        <label class="file-label btn" for="fileInput" title="Tomar foto o grabar video">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M4 7h3l2-2h6l2 2h3v12H4z" fill="rgba(0,0,0,0.08)"/><circle cx="12" cy="13" r="3.2" fill="rgba(0,0,0,0.12)"/></svg>
+          Tomar foto / Grabar video
+        </label>
+
+        <button class="btn secondary" id="uploadBtn" title="Subir el archivo">Subir ahora</button>
+      </div>
+
+      <input type="file" accept="image/*,video/*" capture id="fileInput" />
+
+      <div class="filename-info">
+        Archivo: <span id="filename">—</span> • Tamaño: <span id="filesize">—</span>
+      </div>
+
+      <div class="progress-wrap" aria-hidden="false">
+        <div class="progress-bar" id="progressBar" style="width:0%"></div>
+      </div>
+
+      <div style="font-size:12px;color:#666;margin-top:8px;text-align:center">
+        Nota: Apps Script admite peticiones con limitaciones de tamaño (aprox. <strong>50 MB</strong>); si el video es mayor puede fallar. Recomiendo videos cortos o comprimir antes de subir.
+      </div>
+    </aside>
+  </main>
+
+  <script>
+    // Tu WebApp URL (la que nos diste)
+    const WEBAPP_URL = "https://script.google.com/macros/s/AKfycbwa_UKCJia7UrYpwLEOp6_FAsCAzC5RnUQK7E9w3jayB_cLeKIaye0xrXAGpSRWgCX25A/exec";
+
+    const input = document.getElementById("fileInput");
+    const preview = document.getElementById("preview");
+    const filenameSpan = document.getElementById("filename");
+    const filesizeSpan = document.getElementById("filesize");
+    const uploadBtn = document.getElementById("uploadBtn");
+    const progressBar = document.getElementById("progressBar");
+
+    let selectedFile = null;
+    const MAX_SUGGESTED_BYTES = 50 * 1024 * 1024; // 50 MB (sugerido)
+
+    input.addEventListener("change", (e) => {
+      const file = e.target.files[0];
+      if (!file) return;
+      selectedFile = file;
+      filenameSpan.textContent = file.name;
+      filesizeSpan.textContent = humanFileSize(file.size);
+
+      // Preview: imagen o video
+      const reader = new FileReader();
+      reader.onload = function(ev) {
+        const dataUrl = ev.target.result;
+        preview.innerHTML = "";
+        if (file.type.startsWith("image/")) {
+          const img = document.createElement("img");
+          img.src = dataUrl;
+          img.alt = "Foto tomada";
+          preview.appendChild(img);
+        } else if (file.type.startsWith("video/")) {
+          const vid = document.createElement("video");
+          vid.src = dataUrl;
+          vid.controls = true;
+          vid.playsInline = true;
+          vid.style.maxHeight = "100%";
+          preview.appendChild(vid);
+        } else {
+          preview.textContent = "Archivo seleccionado";
+        }
+      };
+      reader.readAsDataURL(file);
+    });
+
+    uploadBtn.addEventListener("click", async () => {
+      if (!selectedFile) {
+        alert("Primero toma o selecciona un archivo (foto o video).");
+        return;
+      }
+
+      // aviso si muy grande
+      if (selectedFile.size > MAX_SUGGESTED_BYTES) {
+        if (!confirm("El archivo es grande (más de 50 MB). Es probable que falle al subir vía Apps Script. ¿Deseas continuar?")) {
+          return;
+        }
+      }
+
+      uploadBtn.disabled = true;
+      uploadBtn.textContent = "Preparando…";
+      progressBar.style.width = "0%";
+
+      // Leer como dataURL
+      const reader = new FileReader();
+      reader.onload = function(ev) {
+        const dataUrl = ev.target.result;
+
+        // Enviar con XMLHttpRequest para poder mostrar progreso
+        const payload = {
+          file: dataUrl,
+          filename: selectedFile.name,
+          type: selectedFile.type
+        };
+        const xhr = new XMLHttpRequest();
+        xhr.open("POST", WEBAPP_URL, true);
+        xhr.setRequestHeader("Content-Type", "application/json;charset=UTF-8");
+
+        xhr.upload.onprogress = function(e) {
+          if (e.lengthComputable) {
+            const pct = Math.round((e.loaded / e.total) * 100);
+            progressBar.style.width = pct + "%";
+          }
+        };
+
+        xhr.onload = function() {
+          uploadBtn.disabled = false;
+          uploadBtn.textContent = "Subir ahora";
+          try {
+            const res = JSON.parse(xhr.responseText);
+            if (res && res.ok) {
+              alert("Subida correcta: " + res.name);
+              progressBar.style.width = "100%";
+            } else {
+              console.error("Respuesta:", xhr.responseText);
+              alert("Error al subir: " + (res && res.message ? res.message : xhr.responseText));
+            }
+          } catch (err) {
+            console.error(err, xhr.responseText);
+            alert("Error procesando la respuesta del servidor.");
+          }
+        };
+
+        xhr.onerror = function() {
+          uploadBtn.disabled = false;
+          uploadBtn.textContent = "Subir ahora";
+          alert("Error en la conexión. Intenta de nuevo.");
+        };
+
+        xhr.send(JSON.stringify(payload));
+      };
+
+      reader.onerror = function() {
+        uploadBtn.disabled = false;
+        uploadBtn.textContent = "Subir ahora";
+        alert("Error leyendo el archivo.");
+      };
+
+      reader.readAsDataURL(selectedFile);
+    });
+
+    function humanFileSize(bytes) {
+      const thresh = 1024;
+      if (Math.abs(bytes) < thresh) return bytes + " B";
+      const units = ["KB","MB","GB","TB","PB","EB","ZB","YB"];
+      let u = -1;
+      do {
+        bytes /= thresh;
+        ++u;
+      } while (Math.abs(bytes) >= thresh && u < units.length - 1);
+      return bytes.toFixed(1) + " " + units[u];
+    }
+  </script>
+</body>
+</html>
